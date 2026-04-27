@@ -1,0 +1,1442 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BP Monitor — Real-Time Blood Pressure Estimation</title>
+  <meta name="description"
+    content="Real-time blood pressure estimation from PPG sensor data via BLE. Includes ML-based prediction and personal calibration." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet" />
+
+  <style>
+    /* ─── Design tokens ──────────────────────────────────── */
+    :root {
+      --bg: #09090f;
+      --surface: #13131e;
+      --surface2: #1c1c2e;
+      --border: rgba(255, 255, 255, 0.07);
+      --border-glow: rgba(99, 102, 241, 0.4);
+
+      --accent: #6366f1;
+      --accent2: #8b5cf6;
+      --green: #22c55e;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --sky: #38bdf8;
+
+      --text: #f1f5f9;
+      --muted: #64748b;
+      --subtle: #334155;
+
+      --radius: 14px;
+      --radius-sm: 8px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+      --shadow-glow: 0 0 32px rgba(99, 102, 241, 0.15);
+    }
+
+    /* ─── Base ───────────────────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* animated mesh background */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(139, 92, 246, 0.10) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 50% 50%, rgba(56, 189, 248, 0.05) 0%, transparent 60%);
+    }
+
+    /* ─── Layout ─────────────────────────────────────────── */
+    header {
+      padding: 20px 24px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(20px);
+      background: rgba(9, 9, 15, 0.85);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .logo-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+    }
+
+    .logo h1 {
+      font-size: 17px;
+      font-weight: 600;
+    }
+
+    .logo span {
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+      display: block;
+    }
+
+    .status-bar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      transition: all .3s;
+    }
+
+    .status-pill .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background .3s;
+    }
+
+    .status-pill.ok .dot {
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
+
+    .status-pill.warn .dot {
+      background: var(--amber);
+    }
+
+    .status-pill.err .dot {
+      background: var(--red);
+    }
+
+    main {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 24px 20px 60px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    @media (max-width: 700px) {
+      main {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ─── Cards ──────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      transition: box-shadow .3s;
+    }
+
+    .card:hover {
+      box-shadow: 0 0 0 1px var(--border-glow), var(--shadow);
+    }
+
+    .card.full {
+      grid-column: 1 / -1;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
+
+    .badge {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+      border: 1px solid transparent;
+    }
+
+    .badge-green {
+      color: var(--green);
+      background: rgba(34, 197, 94, .12);
+      border-color: rgba(34, 197, 94, .3);
+    }
+
+    .badge-amber {
+      color: var(--amber);
+      background: rgba(245, 158, 11, .12);
+      border-color: rgba(245, 158, 11, .3);
+    }
+
+    .badge-purple {
+      color: var(--accent);
+      background: rgba(99, 102, 241, .12);
+      border-color: rgba(99, 102, 241, .3);
+    }
+
+    .badge-sky {
+      color: var(--sky);
+      background: rgba(56, 189, 248, .12);
+      border-color: rgba(56, 189, 248, .3);
+    }
+
+    /* ─── Big reading numbers ────────────────────────────── */
+    .reading-group {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+    }
+
+    .reading-value {
+      font-size: 56px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      background: linear-gradient(135deg, var(--text) 60%, var(--muted));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      transition: all .5s;
+    }
+
+    .reading-value.updated {
+      animation: pop .5s ease;
+    }
+
+    @keyframes pop {
+      0% {
+        transform: scale(1);
+      }
+
+      40% {
+        transform: scale(1.08);
+      }
+
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    .reading-unit {
+      font-size: 14px;
+      color: var(--muted);
+      margin-left: 2px;
+    }
+
+    /* BP prediction card */
+    .bp-card {
+      grid-column: 1 / -1;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06));
+      border-color: rgba(99, 102, 241, 0.25);
+    }
+
+    .bp-readings {
+      display: flex;
+      gap: 32px;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      margin-bottom: 16px;
+    }
+
+    .bp-block {
+      flex: 1;
+      min-width: 120px;
+    }
+
+    .bp-label {
+      font-size: 11px;
+      color: var(--muted);
+      font-weight: 500;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+
+    .bp-value {
+      font-size: 64px;
+      font-weight: 800;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      transition: all .5s;
+    }
+
+    .bp-value.sbp {
+      background: linear-gradient(135deg, #a78bfa, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .bp-value.dbp {
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .bp-ci {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 4px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .bp-unit {
+      font-size: 14px;
+      color: var(--muted);
+      font-weight: 400;
+    }
+
+    .bp-fraction {
+      font-size: 40px;
+      color: var(--subtle);
+      margin: 0 4px;
+      line-height: 1;
+      align-self: flex-start;
+      margin-top: 12px;
+    }
+
+    .bp-slash-group {
+      display: flex;
+      align-items: baseline;
+    }
+
+    .predict-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .predict-info {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    /* ─── Waveform canvas ────────────────────────────────── */
+    canvas#waveform {
+      width: 100%;
+      height: 80px;
+      border-radius: var(--radius-sm);
+      background: var(--surface2);
+      display: block;
+      margin-top: 12px;
+    }
+
+    /* ─── Buttons ────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      outline: none;
+      transition: all .2s;
+      user-select: none;
+    }
+
+    .btn:disabled {
+      opacity: .4;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(99, 102, 241, .4);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(99, 102, 241, .5);
+    }
+
+    .btn-secondary {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+
+    .btn-secondary:hover:not(:disabled) {
+      background: var(--subtle);
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, .15);
+      color: var(--red);
+      border: 1px solid rgba(239, 68, 68, .3);
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: rgba(239, 68, 68, .25);
+    }
+
+    .btn-green {
+      background: rgba(34, 197, 94, .15);
+      color: var(--green);
+      border: 1px solid rgba(34, 197, 94, .3);
+    }
+
+    .btn-green:hover:not(:disabled) {
+      background: rgba(34, 197, 94, .25);
+    }
+
+    .btn-sm {
+      padding: 6px 12px;
+      font-size: 12px;
+    }
+
+    /* ─── Input ──────────────────────────────────────────── */
+    .input-group {
+      margin-bottom: 12px;
+    }
+
+    .input-group label {
+      display: block;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 5px;
+      font-weight: 500;
+    }
+
+    .input-group input,
+    .input-group select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 13px;
+      padding: 9px 12px;
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: border .2s;
+    }
+
+    .input-group input:focus,
+    .input-group select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, .15);
+    }
+
+    /* ─── Calibration sessions list ─────────────────────── */
+    .session-item {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px;
+      margin-bottom: 10px;
+      position: relative;
+    }
+
+    .session-item-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 10px;
+    }
+
+    .session-num {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    .session-fields {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .session-fields input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 13px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      outline: none;
+      transition: border .2s;
+      width: 100%;
+    }
+
+    .session-fields input:focus {
+      border-color: var(--accent);
+    }
+
+    .session-csv-row {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .session-csv-name {
+      font-size: 11px;
+      color: var(--green);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .session-rec-status {
+      font-size: 11px;
+      color: var(--amber);
+    }
+
+    /* ─── Collapsible ────────────────────────────────────── */
+    .collapsible-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .collapsible-header .chevron {
+      transition: transform .3s;
+      font-size: 14px;
+      color: var(--muted);
+    }
+
+    .collapsible-header.open .chevron {
+      transform: rotate(180deg);
+    }
+
+    .collapsible-body {
+      overflow: hidden;
+      transition: max-height .4s ease;
+      max-height: 0;
+    }
+
+    .collapsible-body.open {
+      max-height: 2000px;
+    }
+
+    /* ─── Toast ──────────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 12px 20px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      max-width: 320px;
+      box-shadow: var(--shadow);
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all .35s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    #toast.show {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    #toast.success {
+      border-color: rgba(34, 197, 94, .4);
+    }
+
+    #toast.error {
+      border-color: rgba(239, 68, 68, .4);
+    }
+
+    /* ─── Progress/spinner ───────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid rgba(255, 255, 255, .2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* ─── Recording indicator ────────────────────────────── */
+    .rec-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--red);
+      animation: blink 1s ease-in-out infinite;
+    }
+
+    @keyframes blink {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .3
+      }
+    }
+
+    /* ─── Small helper ───────────────────────────────────── */
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .spacer {
+      flex: 1;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 14px 0;
+    }
+
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .text-muted {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .mt8 {
+      margin-top: 8px;
+    }
+
+    .mt12 {
+      margin-top: 12px;
+    }
+
+    .mt16 {
+      margin-top: 16px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ═══ HEADER ═══════════════════════════════════════════════════════════════ -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🩺</div>
+      <div>
+        <h1>BP Monitor</h1>
+        <span>Real-time blood pressure estimation</span>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-pill" id="pill-server">
+        <span class="dot"></span> Server
+      </div>
+      <div class="status-pill" id="pill-models">
+        <span class="dot"></span> Models
+      </div>
+      <div class="status-pill" id="pill-cal">
+        <span class="dot"></span> Calibration
+      </div>
+      <div class="status-pill" id="pill-ble">
+        <span class="dot"></span> BLE
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ MAIN ══════════════════════════════════════════════════════════════════ -->
+  <main>
+
+    <!-- ── BP Prediction card ─────────────────────────────────────────────── -->
+    <div class="card bp-card">
+      <div class="card-header">
+        <span class="card-title">ML Blood Pressure Prediction</span>
+        <span class="badge badge-purple" id="bp-windows-badge">— windows</span>
+      </div>
+
+      <div class="bp-readings">
+        <div class="bp-block">
+          <div class="bp-label">Systolic (SBP)</div>
+          <div class="bp-value sbp" id="bp-sbp">—</div>
+          <div class="bp-ci" id="bp-ci-sbp">CI: —</div>
+        </div>
+        <div style="align-self:center;font-size:48px;color:var(--subtle);padding-top:8px">/</div>
+        <div class="bp-block">
+          <div class="bp-label">Diastolic (DBP)</div>
+          <div class="bp-value dbp" id="bp-dbp">—</div>
+          <div class="bp-ci" id="bp-ci-dbp">CI: —</div>
+        </div>
+        <div class="bp-block" style="border-left:1px solid var(--border);padding-left:24px">
+          <div class="bp-label">Raw (uncalibrated)</div>
+          <div style="font-size:28px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums" id="bp-raw">—
+            / —</div>
+          <div class="bp-ci" id="bp-cal-badge">no calibration</div>
+        </div>
+      </div>
+
+      <!-- Waveform -->
+      <canvas id="waveform" style="background:#1a1a2e;border-radius:10px;width:100%;height:140px;margin-top:16px"></canvas>
+      <div style="display:flex;gap:16px;font-size:0.8rem;margin-top:8px;justify-content:center;color:var(--muted)">
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:#a78bfa"></span>IR LED</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:#f87171"></span>Red LED</span>
+      </div>
+      <div class="text-muted mt8" id="buffer-info">Buffer: 0 samples (0.0 s) — connect BLE to start streaming</div>
+
+      <!-- Predict controls -->
+      <div class="predict-row mt12">
+        <button class="btn btn-primary" id="btn-predict" disabled>
+          <span>🔮</span> Predict Now
+        </button>
+        <button class="btn btn-secondary" id="btn-clear-buffer">
+          Clear buffer
+        </button>
+        <div class="predict-info" id="predict-status">Waiting for data…</div>
+      </div>
+    </div>
+
+    <!-- ── BLE Connection card ────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">BLE Sensor</span>
+        <span class="badge badge-sky" id="ble-device-name">Not connected</span>
+      </div>
+
+      <div class="row">
+        <button class="btn btn-primary" id="btn-connect" onclick="connectBLE()">
+          <span>📡</span> Connect
+        </button>
+        <button class="btn btn-danger" id="btn-disconnect" onclick="disconnectBLE()" disabled>
+          Disconnect
+        </button>
+      </div>
+
+      <hr class="divider" />
+
+      <div class="row">
+        <div>
+          <div class="text-muted">IR</div>
+          <div class="reading-group">
+            <span class="reading-value" id="val-ir" style="font-size:32px">—</span>
+          </div>
+        </div>
+        <div>
+          <div class="text-muted">Red</div>
+          <div class="reading-group">
+            <span class="reading-value" id="val-red" style="font-size:32px">—</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Vitals card ────────────────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Live Vitals</span>
+      </div>
+
+      <div style="margin-bottom:20px">
+        <div class="text-muted">Heart Rate</div>
+        <div class="reading-group">
+          <span class="reading-value" id="val-hr">—</span>
+          <span class="reading-unit">bpm</span>
+        </div>
+      </div>
+
+      <div>
+        <div class="text-muted">SpO₂</div>
+        <div class="reading-group">
+          <span class="reading-value" id="val-spo2">—</span>
+          <span class="reading-unit">%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Reference Cuff Reading ─────────────────────────────────────────── -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Reference Cuff Reading</span>
+        <span class="badge badge-amber">Manual</span>
+      </div>
+
+      <div class="input-group">
+        <label for="cuff-sbp">Systolic (mmHg)</label>
+        <input type="number" id="cuff-sbp" placeholder="e.g. 120" min="60" max="250" />
+      </div>
+      <div class="input-group">
+        <label for="cuff-dbp">Diastolic (mmHg)</label>
+        <input type="number" id="cuff-dbp" placeholder="e.g. 80" min="30" max="150" />
+      </div>
+      <div class="text-muted">Used to label calibration sessions.</div>
+    </div>
+
+    <!-- ── Calibration panel ──────────────────────────────────────────────── -->
+    <div class="card full">
+      <div class="collapsible-header" id="cal-toggle" onclick="toggleCal()">
+        <span class="card-title" style="font-size:14px">⚙️ Calibration</span>
+        <div class="row">
+          <span class="badge badge-green" id="cal-status-badge">—</span>
+          <span class="chevron">▾</span>
+        </div>
+      </div>
+
+      <div class="collapsible-body" id="cal-body">
+        <div style="padding-top:16px">
+          <p class="text-muted mt8" style="margin-bottom:16px">
+            Add sessions with known blood pressure readings and a recorded PPG CSV.
+            The more sessions, the better the personalisation.
+          </p>
+
+          <div id="sessions-list"></div>
+
+          <div class="row mt8">
+            <button class="btn btn-secondary btn-sm" onclick="addSession()">+ Add Session</button>
+            <div class="spacer"></div>
+            <button class="btn btn-primary" id="btn-run-cal" onclick="runCalibration()" disabled>
+              <span>🎯</span> Run Calibration
+            </button>
+          </div>
+
+          <div class="text-muted mt8" id="cal-result-text"></div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- ─── Toast ───────────────────────────────────────────────────────────────── -->
+  <div id="toast"></div>
+
+  <script>
+    /* ═══════════════════════════════════════════════════════════════════════════
+       CONSTANTS & STATE
+    ══════════════════════════════════════════════════════════════════════════════ */
+    const SERVER = 'https://my-bp-backend.onrender.com'; // CHANGE THIS to your actual Render URL when deployed
+    let FS = 20;            // dynamically updated sample rate
+    let MAX_BUFFER = FS * 120;  // keep 2 min of samples
+    let sampleCounter = 0;
+    let fsStartTime = 0;
+
+    const state = {
+      ble: null,
+      char: null,
+      irBuffer: [],
+      redBuffer: [],
+      hrSamples: [],
+      sessions: [],
+      sessionCounter: 0,
+      calOpen: false,
+      recording: null,   // { sessionIndex, ir: [], red: [], startTime }
+    };
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       BLE
+    ══════════════════════════════════════════════════════════════════════════════ */
+    // Standard MAX30102 / custom service UUIDs — adjust if needed
+    const BLE_SERVICE = '12345678-1234-1234-1234-123456789012';  // custom String service
+    const BLE_CHAR_RX = '87654321-4321-4321-4321-210987654321';
+
+    async function connectBLE() {
+      try {
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [BLE_SERVICE, 0x1810, 0x180D],
+        });
+        state.ble = device;
+        setPill('pill-ble', 'loading');
+        document.getElementById('ble-device-name').textContent = device.name || 'Unknown';
+
+        device.addEventListener('gattserverdisconnected', onBLEDisconnect);
+
+        const server = await device.gatt.connect();
+        let svc, char;
+        try {
+          svc = await server.getPrimaryService(BLE_SERVICE);
+          char = await svc.getCharacteristic(BLE_CHAR_RX);
+        } catch (e1) {
+          // try heart-rate service as fallback
+          try {
+            svc = await server.getPrimaryService(0x180D);
+            char = await svc.getCharacteristic(0x2A37);
+          } catch (e2) {
+            throw new Error(`Device doesn't have the expected Service UUIDs (${BLE_SERVICE} or 0x180D). It threw: ${e2.message}. Please update BLE_SERVICE in index.html to match your device.`);
+          }
+        }
+
+        state.char = char;
+        await char.startNotifications();
+        char.addEventListener('characteristicvaluechanged', onBLEData);
+
+        setPill('pill-ble', 'ok');
+        document.getElementById('btn-connect').disabled = true;
+        document.getElementById('btn-disconnect').disabled = false;
+        toast('BLE connected to ' + device.name, 'success');
+      } catch (e) {
+        setPill('pill-ble', 'err');
+        toast('BLE error: ' + e.message, 'error');
+      }
+    }
+
+    function disconnectBLE() {
+      if (state.ble && state.ble.gatt.connected) {
+        state.ble.gatt.disconnect();
+      }
+    }
+
+    function onBLEDisconnect() {
+      setPill('pill-ble', '');
+      document.getElementById('btn-connect').disabled = false;
+      document.getElementById('btn-disconnect').disabled = true;
+      document.getElementById('ble-device-name').textContent = 'Not connected';
+      toast('BLE disconnected', 'error');
+    }
+
+    function onBLEData(event) {
+      if (fsStartTime === 0) fsStartTime = performance.now();
+      sampleCounter++;
+      if (sampleCounter % 50 === 0) {
+        const elapsed = (performance.now() - fsStartTime) / 1000;
+        if (elapsed > 0) {
+          FS = Math.max(10, Math.min(500, Math.round(sampleCounter / elapsed)));
+          MAX_BUFFER = FS * 120;
+        }
+      }
+
+      const dv = event.target.value;
+      let ir = 0, red = 0;
+
+      // 1) Try text protocol: "ir,red"
+      let textHandled = false;
+      try {
+        const textStr = new TextDecoder().decode(dv).trim();
+        if (state.isTextProtocol || textStr.includes(',')) {
+          state.isTextProtocol = true;
+          textHandled = true;
+          if (textStr.includes(',')) {
+            const parts = textStr.split(',');
+            let pIr = parseInt(parts[0]);
+            let pRed = parseInt(parts[1]);
+            if (!isNaN(pIr)) ir = pIr;
+            if (!isNaN(pRed)) red = pRed;
+          }
+        }
+      } catch (e) {
+        // ignore decoder errors
+      }
+
+      // 2) Fallback to binary protocol if not using text protocol
+      if (!textHandled && ir === 0 && red === 0) {
+        if (dv.byteLength >= 8) {
+          ir = dv.getUint32(0, true);
+          red = dv.getUint32(4, true);
+        } else if (dv.byteLength >= 4) {
+          ir = dv.getUint32(0, true);
+          red = ir;
+        } else {
+          // 1-2 byte heart-rate notification
+          const hr = dv.getUint8(1);
+          document.getElementById('val-hr').textContent = hr;
+          return;
+        }
+      }
+
+      // Push to buffer
+      state.irBuffer.push(ir);
+      state.redBuffer.push(red);
+      if (state.irBuffer.length > MAX_BUFFER) { state.irBuffer.shift(); state.redBuffer.shift(); }
+
+      // Push to recording if active
+      if (state.recording) {
+        state.recording.ir.push(ir);
+        state.recording.red.push(red);
+      }
+
+      // Update display
+      document.getElementById('val-ir').textContent = ir;
+      document.getElementById('val-red').textContent = red;
+
+      // Derived HR (sliding window peak counter)
+      updateLiveVitals();
+      updateBufferInfo();
+      drawWaveform();
+
+      // Enable predict if enough data
+      const enough = state.irBuffer.length >= FS * 30;
+      document.getElementById('btn-predict').disabled = !enough;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       WAVEFORM CANVAS
+    ══════════════════════════════════════════════════════════════════════════════ */
+    const canvas = document.getElementById('waveform');
+    const ctx = canvas.getContext('2d');
+
+    function drawWaveform() {
+      const W = canvas.parentElement.clientWidth - 40;
+      canvas.width = W;
+      canvas.height = 140;
+      const H = canvas.height;
+
+      const CHART_LEN = 200; // Keep 10 seconds of data on screen
+      const nSamples = Math.min(CHART_LEN, state.irBuffer.length);
+      const irData = state.irBuffer.slice(-nSamples);
+      const redData = state.redBuffer.slice(-nSamples);
+
+      ctx.clearRect(0, 0, W, H);
+
+      // Grid lines
+      ctx.strokeStyle = '#2a2a3e';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const y = (H / 4) * i;
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      }
+      for (let i = 1; i < 8; i++) {
+        const x = (W / 8) * i;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      }
+
+      function getScale(pts) {
+        const valid = pts.filter(v => v > 0);
+        if (valid.length < 2) return null;
+        let min = Math.min(...valid);
+        let max = Math.max(...valid);
+        const pad = (max - min) * 0.15 || max * 0.05 || 1;
+        return { min: min - pad, max: max + pad };
+      }
+
+      function drawLine(pts, color, scale) {
+        if (!scale || pts.length < 2) return;
+        const range = scale.max - scale.min || 1;
+        const MARGIN = 14;
+        const drawH = H - MARGIN * 2;
+
+        ctx.beginPath();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.8;
+        ctx.shadowColor = color;
+        ctx.shadowBlur = 3;
+
+        pts.forEach((v, i) => {
+          const x = (i / (pts.length - 1)) * W;
+          const y = MARGIN + drawH - ((v - scale.min) / range) * drawH;
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      const irScale = getScale(irData);
+      const redScale = getScale(redData);
+
+      drawLine(irData, '#a78bfa', irScale);
+      drawLine(redData, '#f87171', redScale);
+
+      // Y-axis range labels
+      ctx.font = '10px monospace';
+      if (irScale) {
+        ctx.fillStyle = '#a78bfa';
+        ctx.textAlign = 'left';
+        ctx.fillText(Math.round(irScale.max).toLocaleString(), 4, 12);
+        ctx.fillText(Math.round(irScale.min).toLocaleString(), 4, H - 4);
+      }
+      if (redScale) {
+        ctx.fillStyle = '#f87171';
+        ctx.textAlign = 'right';
+        ctx.fillText(Math.round(redScale.max).toLocaleString(), W - 4, 12);
+        ctx.fillText(Math.round(redScale.min).toLocaleString(), W - 4, H - 4);
+      }
+    }
+    window.addEventListener('resize', drawWaveform);
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       LIVE VITALS
+    ══════════════════════════════════════════════════════════════════════════════ */
+    function updateLiveVitals() {
+      const window_sec = 10;
+      const n = Math.min(FS * window_sec, state.irBuffer.length);
+      const ir = state.irBuffer.slice(-n);
+      const red = state.redBuffer.slice(-n);
+
+      if (ir.length < FS * 3) return;
+
+      // Simple HR via zero-crossing on mean-centred signal
+      const mean = ir.reduce((a, b) => a + b, 0) / ir.length;
+      let crossings = 0;
+      for (let i = 1; i < ir.length; i++) {
+        if ((ir[i - 1] - mean) < 0 && (ir[i] - mean) >= 0) crossings++;
+      }
+      const hrEst = Math.round((crossings / (n / FS)) * 60 / 2);
+      if (hrEst > 30 && hrEst < 200) {
+        document.getElementById('val-hr').textContent = hrEst;
+      }
+
+      // SpO2 via R ratio
+      const irAC = Math.max(...ir) - Math.min(...ir);
+      const redAC = Math.max(...red) - Math.min(...red);
+      const irDC = mean;
+      const redDC = red.reduce((a, b) => a + b, 0) / red.length;
+      if (irDC > 0 && redDC > 0 && irAC > 0) {
+        const R = (redAC / redDC) / (irAC / irDC);
+        const spo2 = Math.min(100, Math.max(85, Math.round(110 - 25 * R)));
+        document.getElementById('val-spo2').textContent = spo2;
+      }
+    }
+
+    function updateBufferInfo() {
+      const n = state.irBuffer.length;
+      const s = (n / FS).toFixed(1);
+      document.getElementById('buffer-info').textContent =
+        `Buffer: ${n} samples (${s} s)`;
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       PREDICT
+    ══════════════════════════════════════════════════════════════════════════════ */
+    async function predict() {
+      const btn = document.getElementById('btn-predict');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Predicting…';
+      document.getElementById('predict-status').textContent = 'Sending to server…';
+
+      try {
+        const res = await fetch(SERVER + '/api/predict', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            ir: state.irBuffer,
+            red: state.redBuffer,
+            fs: FS,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        // Update BP card
+        animateValue('bp-sbp', data.sbp);
+        animateValue('bp-dbp', data.dbp);
+        document.getElementById('bp-raw').textContent = `${data.sbp_raw} / ${data.dbp_raw}`;
+        document.getElementById('bp-ci-sbp').textContent = `CI: ${data.ci_sbp_low} – ${data.ci_sbp_high} mmHg`;
+        document.getElementById('bp-ci-dbp').textContent = `CI: ${data.ci_dbp_low} – ${data.ci_dbp_high} mmHg`;
+        document.getElementById('bp-windows-badge').textContent = `${data.n_windows} windows`;
+        document.getElementById('predict-status').textContent = `Last prediction at ${new Date().toLocaleTimeString()}`;
+        toast(`SBP ${data.sbp} / DBP ${data.dbp} mmHg`, 'success');
+      } catch (e) {
+        document.getElementById('predict-status').textContent = 'Error: ' + e.message;
+        toast('Prediction failed: ' + e.message, 'error');
+      } finally {
+        btn.innerHTML = '<span>🔮</span> Predict Now';
+        btn.disabled = state.irBuffer.length < FS * 30;
+      }
+    }
+
+    function animateValue(id, value) {
+      const el = document.getElementById(id);
+      el.textContent = value;
+      el.classList.remove('updated');
+      void el.offsetWidth;  // reflow
+      el.classList.add('updated');
+    }
+
+    document.getElementById('btn-predict').addEventListener('click', predict);
+    document.getElementById('btn-clear-buffer').addEventListener('click', () => {
+      state.irBuffer = [];
+      state.redBuffer = [];
+      updateBufferInfo();
+      drawWaveform();
+      document.getElementById('btn-predict').disabled = true;
+      toast('Buffer cleared');
+    });
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       CALIBRATION
+    ══════════════════════════════════════════════════════════════════════════════ */
+    function toggleCal() {
+      state.calOpen = !state.calOpen;
+      document.getElementById('cal-body').classList.toggle('open', state.calOpen);
+      document.getElementById('cal-toggle').classList.toggle('open', state.calOpen);
+    }
+
+    function addSession() {
+      const idx = state.sessionCounter++;
+      state.sessions.push({ idx, csvData: null, fname: null });
+      renderSessions();
+    }
+
+    function removeSession(idx) {
+      state.sessions = state.sessions.filter(s => s.idx !== idx);
+      renderSessions();
+    }
+
+    function renderSessions() {
+      const list = document.getElementById('sessions-list');
+      list.innerHTML = '';
+
+      state.sessions.forEach((s, pos) => {
+        const div = document.createElement('div');
+        div.className = 'session-item';
+        div.innerHTML = `
+      <div class="session-item-header">
+        <span class="session-num">Session ${pos + 1}</span>
+        <button class="btn btn-danger btn-sm" onclick="removeSession(${s.idx})">Remove</button>
+      </div>
+      <div class="session-fields">
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">SBP (mmHg)</label>
+          <input type="number" id="ses-sbp-${s.idx}" placeholder="e.g. 120"
+            value="${s.sbp || ''}" onchange="updateSession(${s.idx},'sbp',this.value)" />
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px">DBP (mmHg)</label>
+          <input type="number" id="ses-dbp-${s.idx}" placeholder="e.g. 80"
+            value="${s.dbp || ''}" onchange="updateSession(${s.idx},'dbp',this.value)" />
+        </div>
+      </div>
+      <div class="session-csv-row">
+        <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+          📁 Upload CSV
+          <input type="file" accept=".csv" style="display:none"
+            onchange="loadCSV(${s.idx}, this)" />
+        </label>
+        <button class="btn btn-green btn-sm" onclick="recordSession(${s.idx})" id="rec-btn-${s.idx}">
+          <span class="rec-dot"></span> Record Live (30s)
+        </button>
+        <span class="session-csv-name" id="ses-fname-${s.idx}">${s.fname || 'No CSV loaded'}</span>
+      </div>
+    `;
+        list.appendChild(div);
+      });
+
+      document.getElementById('btn-run-cal').disabled = state.sessions.length === 0;
+    }
+
+    function updateSession(idx, field, value) {
+      const s = state.sessions.find(s => s.idx === idx);
+      if (s) s[field] = parseFloat(value);
+    }
+
+    function loadCSV(idx, input) {
+      const file = input.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = e => {
+        const s = state.sessions.find(s => s.idx === idx);
+        if (s) { s.csvData = e.target.result; s.fname = file.name; }
+        document.getElementById(`ses-fname-${idx}`).textContent = file.name;
+        toast('CSV loaded: ' + file.name, 'success');
+      };
+      reader.readAsText(file);
+    }
+
+    function recordSession(idx) {
+      if (state.recording) { toast('Already recording', 'error'); return; }
+      if (!state.ble || !state.ble.gatt.connected) { toast('Connect BLE first', 'error'); return; }
+
+      const btn = document.getElementById(`rec-btn-${idx}`);
+      const DURATION = 30;  // seconds
+      state.recording = { idx, ir: [], red: [], startTime: Date.now() };
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner"></span> Recording…`;
+
+      const nameEl = document.getElementById(`ses-fname-${idx}`);
+      let remaining = DURATION;
+      const timer = setInterval(() => {
+        remaining--;
+        nameEl.textContent = `Recording… ${remaining}s left`;
+        if (remaining <= 0) {
+          clearInterval(timer);
+          finishRecording(idx, btn);
+        }
+      }, 1000);
+    }
+
+    function finishRecording(idx, btn) {
+      const rec = state.recording;
+      state.recording = null;
+
+      if (!rec || rec.ir.length < 10) {
+        toast('Recording too short — no data captured', 'error');
+        btn.disabled = false; btn.innerHTML = `<span class="rec-dot"></span> Record Live (30s)`;
+        return;
+      }
+
+      // Build CSV string
+      let csv = 'ir,red\n';
+      for (let i = 0; i < rec.ir.length; i++) csv += `${rec.ir[i]},${rec.red[i]}\n`;
+
+      const s = state.sessions.find(s => s.idx === idx);
+      if (s) { s.csvData = csv; s.fname = `live_session_${idx + 1}.csv`; }
+
+      document.getElementById(`ses-fname-${idx}`).textContent = `live_session_${idx + 1}.csv (${rec.ir.length} samples)`;
+      btn.disabled = false;
+      btn.innerHTML = `<span class="rec-dot"></span> Record Live (30s)`;
+      toast(`Session ${idx + 1} recorded — ${rec.ir.length} samples`, 'success');
+    }
+
+    async function runCalibration() {
+      const valid = state.sessions.filter(s => s.csvData && s.sbp && s.dbp);
+      if (valid.length === 0) {
+        toast('Add at least 1 session with CSV + BP values', 'error'); return;
+      }
+
+      const btn = document.getElementById('btn-run-cal');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Running…';
+      document.getElementById('cal-result-text').textContent = 'Sending calibration sessions to server…';
+
+      try {
+        const res = await fetch(SERVER + '/api/calibrate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessions: valid.map(s => ({ csv_data: s.csvData, sbp: s.sbp, dbp: s.dbp })),
+            fs: FS,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        const biasInfo = `Bias: SBP ${data.bias_sbp > 0 ? '+' : ''}${data.bias_sbp.toFixed(1)}, DBP ${data.bias_dbp > 0 ? '+' : ''}${data.bias_dbp.toFixed(1)} mmHg`;
+        document.getElementById('cal-result-text').textContent =
+          `✅ Calibration saved — ${data.n_sessions} session(s). ${biasInfo}`;
+        setPill('pill-cal', 'ok');
+        document.getElementById('cal-status-badge').textContent = `${data.n_sessions} sessions`;
+        toast('Calibration complete!', 'success');
+
+        // Reload status
+        checkStatus();
+      } catch (e) {
+        document.getElementById('cal-result-text').textContent = '❌ Error: ' + e.message;
+        toast('Calibration failed: ' + e.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<span>🎯</span> Run Calibration';
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       SERVER STATUS
+    ══════════════════════════════════════════════════════════════════════════════ */
+    async function checkStatus() {
+      try {
+        const res = await fetch(SERVER + '/api/status');
+        const data = await res.json();
+
+        setPill('pill-server', 'ok');
+        setPill('pill-models', data.models_loaded ? 'ok' : 'err');
+        setPill('pill-cal', data.calibration_loaded ? 'ok' : 'warn');
+
+        if (data.calibration_loaded) {
+          document.getElementById('bp-cal-badge').textContent =
+            `calibrated (${data.cal_sessions} sessions)`;
+          document.getElementById('cal-status-badge').textContent = `${data.cal_sessions} sessions`;
+        } else {
+          document.getElementById('bp-cal-badge').textContent = 'no calibration';
+          document.getElementById('cal-status-badge').textContent = 'Not calibrated';
+        }
+      } catch {
+        setPill('pill-server', 'err');
+        setPill('pill-models', '');
+      }
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       UI HELPERS
+    ══════════════════════════════════════════════════════════════════════════════ */
+    function setPill(id, state) {
+      const el = document.getElementById(id);
+      el.className = 'status-pill' + (state ? ' ' + state : '');
+    }
+
+    let toastTimer;
+    function toast(msg, type = '') {
+      const el = document.getElementById('toast');
+      el.textContent = msg;
+      el.className = 'toast show' + (type ? ' ' + type : '');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => el.classList.remove('show'), 3000);
+    }
+
+    /* ═══════════════════════════════════════════════════════════════════════════
+       INIT
+    ══════════════════════════════════════════════════════════════════════════════ */
+    (function init() {
+      checkStatus();
+      setInterval(checkStatus, 15000);
+
+      // Add one empty session by default
+      addSession();
+
+      // Draw empty waveform
+      requestAnimationFrame(drawWaveform);
+
+      // Check Web Bluetooth availability
+      if (!navigator.bluetooth) {
+        toast('Web Bluetooth not available — use Chrome/Edge on desktop or Bluefy on iOS', 'error');
+        document.getElementById('btn-connect').disabled = true;
+      }
+    })();
+  </script>
+</body>
+
+</html>
