@@ -769,7 +769,7 @@
         <button class="btn btn-danger" id="btn-disconnect" onclick="disconnectBLE()" disabled>
           Disconnect
         </button>
-        <button class="btn btn-secondary" id="btn-start-reading" onclick="startManualReading()" disabled>
+        <button class="btn btn-secondary" id="btn-start-reading" onclick="triggerPredictionReading()" disabled>
           <span>⏱️</span> Start 30s Reading
         </button>
       </div>
@@ -966,12 +966,49 @@
       try {
         const encoder = new TextEncoder();
         await state.cmdChar.writeValue(encoder.encode("START"));
-        toast('Device reading started. Wait 30 seconds...', 'success');
         return true;
       } catch (e) {
         toast('Failed to send START command: ' + e.message, 'error');
         return false;
       }
+    }
+
+    async function triggerPredictionReading() {
+      if (state.recording) { toast('Currently recording calibration session', 'error'); return; }
+      
+      const started = await startManualReading();
+      if (!started) return;
+
+      // Clear buffers so we only predict on fresh data
+      state.irBuffer = [];
+      state.redBuffer = [];
+      updateBufferInfo();
+      drawWaveform();
+
+      const btn = document.getElementById('btn-start-reading');
+      btn.disabled = true;
+      let remaining = 30;
+      btn.innerHTML = `<span class="spinner"></span> Reading (${remaining}s)…`;
+
+      toast('Device reading started. Wait 30 seconds...', 'success');
+
+      const timer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          btn.innerHTML = `<span class="spinner"></span> Reading (${remaining}s)…`;
+        } else {
+          clearInterval(timer);
+          btn.innerHTML = `<span>⏱️</span> Start 30s Reading`;
+          btn.disabled = false;
+          
+          if (state.irBuffer.length > 0) {
+            toast('Reading complete! Predicting...', 'success');
+            predict();
+          } else {
+            toast('Reading finished, but no data received.', 'error');
+          }
+        }
+      }, 1000);
     }
 
     function disconnectBLE() {
