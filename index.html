@@ -898,12 +898,35 @@
 
     async function connectBLE() {
       try {
-        const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
-          optionalServices: [BLE_SERVICE, 0x1810, 0x180D],
-        });
-        state.ble = device;
         setPill('pill-ble', 'loading');
+        
+        let device;
+        try {
+          // Standard approach: use filters. This avoids 'acceptAllDevices' 
+          // which is rejected by many iOS polyfills (like Bluefy) throwing error 2.
+          device = await navigator.bluetooth.requestDevice({
+            filters: [
+              { services: [BLE_SERVICE] }
+            ],
+            optionalServices: [
+              '00001810-0000-1000-8000-00805f9b34fb',
+              '0000180d-0000-1000-8000-00805f9b34fb'
+            ]
+          });
+        } catch (err1) {
+          console.warn("Filter requestDevice failed, trying acceptAllDevices:", err1);
+          // Fallback
+          device = await navigator.bluetooth.requestDevice({
+            acceptAllDevices: true,
+            optionalServices: [
+              BLE_SERVICE, 
+              '00001810-0000-1000-8000-00805f9b34fb',
+              '0000180d-0000-1000-8000-00805f9b34fb'
+            ]
+          });
+        }
+
+        state.ble = device;
         document.getElementById('ble-device-name').textContent = device.name || 'Unknown';
 
         device.addEventListener('gattserverdisconnected', onBLEDisconnect);
@@ -916,10 +939,10 @@
         } catch (e1) {
           // try heart-rate service as fallback
           try {
-            svc = await server.getPrimaryService(0x180D);
-            char = await svc.getCharacteristic(0x2A37);
+            svc = await server.getPrimaryService('0000180d-0000-1000-8000-00805f9b34fb');
+            char = await svc.getCharacteristic('00002a37-0000-1000-8000-00805f9b34fb');
           } catch (e2) {
-            throw new Error(`Device doesn't have the expected Service UUIDs (${BLE_SERVICE} or 0x180D). It threw: ${e2.message}. Please update BLE_SERVICE in index.html to match your device.`);
+            throw new Error(`Device doesn't have the expected Service UUIDs (${BLE_SERVICE} or Heart Rate). It threw: ${e2.message || String(e2)}.`);
           }
         }
 
@@ -933,8 +956,15 @@
         toast('BLE connected to ' + device.name, 'success');
       } catch (e) {
         setPill('pill-ble', 'err');
-        const msg = e.message !== undefined ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
+        
+        // Handle weird polyfill errors like '2'
+        let msg = e.message !== undefined ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
+        if (msg === '2') {
+          msg = "Bluetooth is unsupported/turned off, or the app lacks BT permissions (Error 2).";
+        }
+        
         toast('BLE error: ' + msg, 'error');
+        console.error('BLE connection error:', e);
       }
     }
 
