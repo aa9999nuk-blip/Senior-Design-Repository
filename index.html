@@ -900,31 +900,17 @@
       try {
         setPill('pill-ble', 'loading');
         
-        let device;
-        try {
-          // Standard approach: use filters. This avoids 'acceptAllDevices' 
-          // which is rejected by many iOS polyfills (like Bluefy) throwing error 2.
-          device = await navigator.bluetooth.requestDevice({
-            filters: [
-              { services: [BLE_SERVICE] }
-            ],
-            optionalServices: [
-              '00001810-0000-1000-8000-00805f9b34fb',
-              '0000180d-0000-1000-8000-00805f9b34fb'
-            ]
-          });
-        } catch (err1) {
-          console.warn("Filter requestDevice failed, trying acceptAllDevices:", err1);
-          // Fallback
-          device = await navigator.bluetooth.requestDevice({
-            acceptAllDevices: true,
-            optionalServices: [
-              BLE_SERVICE, 
-              '00001810-0000-1000-8000-00805f9b34fb',
-              '0000180d-0000-1000-8000-00805f9b34fb'
-            ]
-          });
-        }
+        // We use acceptAllDevices so that devices that don't explicitly advertise
+        // the custom BLE_SERVICE in their broadcasting packets still show up.
+        // We use string UUIDs to avoid polyfill crashes.
+        const device = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [
+            BLE_SERVICE,
+            '00001810-0000-1000-8000-00805f9b34fb',
+            '0000180d-0000-1000-8000-00805f9b34fb'
+          ]
+        });
 
         state.ble = device;
         document.getElementById('ble-device-name').textContent = device.name || 'Unknown';
