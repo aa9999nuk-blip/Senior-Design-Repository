@@ -897,6 +897,7 @@
       lastDataTime: 0,
       lastMeasureStart: 0,
       idleTimerInterval: null,
+      isMeasuring: false,
     };
 
     /* ═══════════════════════════════════════════════════════════════════════════
@@ -993,30 +994,7 @@
       updateBufferInfo();
       drawWaveform();
 
-      const btn = document.getElementById('btn-start-reading');
-      btn.disabled = true;
-      let remaining = 30;
-      btn.innerHTML = `<span class="spinner"></span> Reading (${remaining}s)…`;
-
-      toast('Device reading started. Wait 30 seconds...', 'success');
-
-      const timer = setInterval(() => {
-        remaining--;
-        if (remaining > 0) {
-          btn.innerHTML = `<span class="spinner"></span> Reading (${remaining}s)…`;
-        } else {
-          clearInterval(timer);
-          btn.innerHTML = `<span>⏱️</span> Start 30s Reading`;
-          btn.disabled = false;
-          
-          if (state.irBuffer.length > 0) {
-            toast('Reading complete! Predicting...', 'success');
-            predict();
-          } else {
-            toast('Reading finished, but no data received.', 'error');
-          }
-        }
-      }, 1000);
+      toast('Reading started. The app will predict automatically when finished.', 'success');
     }
 
     function startIdleTimer() {
@@ -1036,6 +1014,16 @@
         
         if (state.lastDataTime > 0 && timeSinceLastData > 5000) {
           // We are in IDLE state (haven't received data for 5s)
+          
+          if (state.isMeasuring) {
+            state.isMeasuring = false;
+            // The measurement JUST finished! Auto-predict if not calibrating.
+            if (!state.recording && state.irBuffer.length >= FS * 10) {
+              toast('Reading complete! Predicting...', 'success');
+              predict();
+            }
+          }
+          
           if (state.lastMeasureStart > 0) {
             const elapsed = now - state.lastMeasureStart;
             const intervalMs = 15 * 60 * 1000;
@@ -1094,6 +1082,13 @@
       if (now - state.lastDataTime > 5000) {
         // More than 5 seconds since last data means a new session started
         state.lastMeasureStart = now;
+        state.isMeasuring = true;
+        
+        // Auto-clear buffer on new session (unless recording a calibration)
+        if (!state.recording) {
+          state.irBuffer = [];
+          state.redBuffer = [];
+        }
       }
       state.lastDataTime = now;
 
