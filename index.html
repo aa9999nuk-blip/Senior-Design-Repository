@@ -769,6 +769,9 @@
         <button class="btn btn-danger" id="btn-disconnect" onclick="disconnectBLE()" disabled>
           Disconnect
         </button>
+        <button class="btn btn-secondary" id="btn-start-reading" onclick="startManualReading()" disabled>
+          <span>⏱️</span> Start 30s Reading
+        </button>
       </div>
 
       <hr class="divider" />
@@ -880,6 +883,7 @@
     const state = {
       ble: null,
       char: null,
+      cmdChar: null,
       irBuffer: [],
       redBuffer: [],
       hrSamples: [],
@@ -895,6 +899,7 @@
     // Standard MAX30102 / custom service UUIDs — adjust if needed
     const BLE_SERVICE = '12345678-1234-1234-1234-123456789012';  // custom String service
     const BLE_CHAR_RX = '87654321-4321-4321-4321-210987654321';
+    const BLE_CMD_CHAR = '11223344-5566-7788-9900-aabbccddeeff';
 
     async function connectBLE() {
       try {
@@ -922,6 +927,7 @@
         try {
           svc = await server.getPrimaryService(BLE_SERVICE);
           char = await svc.getCharacteristic(BLE_CHAR_RX);
+          state.cmdChar = await svc.getCharacteristic(BLE_CMD_CHAR).catch(() => null);
         } catch (e1) {
           // try heart-rate service as fallback
           try {
@@ -939,6 +945,7 @@
         setPill('pill-ble', 'ok');
         document.getElementById('btn-connect').disabled = true;
         document.getElementById('btn-disconnect').disabled = false;
+        if (state.cmdChar) document.getElementById('btn-start-reading').disabled = false;
         toast('BLE connected to ' + device.name, 'success');
       } catch (e) {
         setPill('pill-ble', 'err');
@@ -954,6 +961,19 @@
       }
     }
 
+    async function startManualReading() {
+      if (!state.cmdChar) { toast('Command characteristic not available. Connect BLE first.', 'error'); return false; }
+      try {
+        const encoder = new TextEncoder();
+        await state.cmdChar.writeValue(encoder.encode("START"));
+        toast('Device reading started. Wait 30 seconds...', 'success');
+        return true;
+      } catch (e) {
+        toast('Failed to send START command: ' + e.message, 'error');
+        return false;
+      }
+    }
+
     function disconnectBLE() {
       if (state.ble && state.ble.gatt.connected) {
         state.ble.gatt.disconnect();
@@ -964,7 +984,9 @@
       setPill('pill-ble', '');
       document.getElementById('btn-connect').disabled = false;
       document.getElementById('btn-disconnect').disabled = true;
+      document.getElementById('btn-start-reading').disabled = true;
       document.getElementById('ble-device-name').textContent = 'Not connected';
+      state.cmdChar = null;
       toast('BLE disconnected', 'error');
     }
 
@@ -1305,9 +1327,15 @@
       reader.readAsText(file);
     }
 
-    function recordSession(idx) {
+    async function recordSession(idx) {
       if (state.recording) { toast('Already recording', 'error'); return; }
       if (!state.ble || !state.ble.gatt.connected) { toast('Connect BLE first', 'error'); return; }
+
+      // Try to start the reading on the device
+      if (state.cmdChar) {
+        const started = await startManualReading();
+        if (!started) return;
+      }
 
       const btn = document.getElementById(`rec-btn-${idx}`);
       const DURATION = 30;  // seconds
