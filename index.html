@@ -933,7 +933,8 @@
         toast('BLE connected to ' + device.name, 'success');
       } catch (e) {
         setPill('pill-ble', 'err');
-        toast('BLE error: ' + e.message, 'error');
+        const msg = e.message !== undefined ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
+        toast('BLE error: ' + msg, 'error');
       }
     }
 
