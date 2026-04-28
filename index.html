@@ -757,9 +757,12 @@
 
     <!-- ── BLE Connection card ────────────────────────────────────────────── -->
     <div class="card">
-      <div class="card-header">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
         <span class="card-title">BLE Sensor</span>
-        <span class="badge badge-sky" id="ble-device-name">Not connected</span>
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+          <span class="badge badge-sky" id="ble-device-name">Not connected</span>
+          <span class="badge badge-gray" id="ble-idle-timer" style="display: none;">Idle</span>
+        </div>
       </div>
 
       <div class="row">
@@ -891,6 +894,9 @@
       sessionCounter: 0,
       calOpen: false,
       recording: null,   // { sessionIndex, ir: [], red: [], startTime }
+      lastDataTime: 0,
+      lastMeasureStart: 0,
+      idleTimerInterval: null,
     };
 
     /* ═══════════════════════════════════════════════════════════════════════════
@@ -947,6 +953,8 @@
         document.getElementById('btn-disconnect').disabled = false;
         if (state.cmdChar) document.getElementById('btn-start-reading').disabled = false;
         toast('BLE connected to ' + device.name, 'success');
+        
+        startIdleTimer();
       } catch (e) {
         setPill('pill-ble', 'err');
         
@@ -1011,6 +1019,54 @@
       }, 1000);
     }
 
+    function startIdleTimer() {
+      if (state.idleTimerInterval) clearInterval(state.idleTimerInterval);
+      
+      const badge = document.getElementById('ble-idle-timer');
+      badge.style.display = 'inline-block';
+      
+      state.idleTimerInterval = setInterval(() => {
+        if (!state.ble || !state.ble.gatt.connected) {
+          badge.style.display = 'none';
+          return;
+        }
+        
+        const now = Date.now();
+        const timeSinceLastData = now - state.lastDataTime;
+        
+        if (state.lastDataTime > 0 && timeSinceLastData > 5000) {
+          // We are in IDLE state (haven't received data for 5s)
+          if (state.lastMeasureStart > 0) {
+            const elapsed = now - state.lastMeasureStart;
+            const intervalMs = 15 * 60 * 1000;
+            const remainingMs = intervalMs - elapsed;
+            
+            if (remainingMs > 0) {
+              const rSec = Math.floor(remainingMs / 1000);
+              const m = Math.floor(rSec / 60);
+              const s = rSec % 60;
+              badge.textContent = `Idle (Next in ${m}m ${s}s)`;
+              badge.className = 'badge badge-gray';
+            } else {
+              badge.textContent = `Auto-trigger imminent...`;
+              badge.className = 'badge badge-amber';
+            }
+          } else {
+            badge.textContent = `Idle (Waiting for first reading...)`;
+            badge.className = 'badge badge-gray';
+          }
+        } else if (state.lastDataTime > 0) {
+          // We are currently receiving data
+          badge.textContent = `Measuring...`;
+          badge.className = 'badge badge-green';
+        } else {
+          // Connected but no data ever received
+          badge.textContent = `Idle`;
+          badge.className = 'badge badge-gray';
+        }
+      }, 1000);
+    }
+
     function disconnectBLE() {
       if (state.ble && state.ble.gatt.connected) {
         state.ble.gatt.disconnect();
@@ -1024,10 +1080,23 @@
       document.getElementById('btn-start-reading').disabled = true;
       document.getElementById('ble-device-name').textContent = 'Not connected';
       state.cmdChar = null;
+      
+      if (state.idleTimerInterval) clearInterval(state.idleTimerInterval);
+      document.getElementById('ble-idle-timer').style.display = 'none';
+      state.lastDataTime = 0;
+      state.lastMeasureStart = 0;
+      
       toast('BLE disconnected', 'error');
     }
 
     function onBLEData(event) {
+      const now = Date.now();
+      if (now - state.lastDataTime > 5000) {
+        // More than 5 seconds since last data means a new session started
+        state.lastMeasureStart = now;
+      }
+      state.lastDataTime = now;
+
       if (fsStartTime === 0) fsStartTime = performance.now();
       sampleCounter++;
       if (sampleCounter % 50 === 0) {
