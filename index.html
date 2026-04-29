@@ -674,6 +674,39 @@
     .mt16 {
       margin-top: 16px;
     }
+
+    /* ─── Profile switcher ────────────────────────────────── */
+    .profile-switcher {
+      display: flex;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 3px;
+    }
+
+    .profile-btn {
+      padding: 5px 14px;
+      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .profile-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .profile-btn:hover:not(.active) {
+      color: var(--text);
+      background: var(--surface2);
+    }
   </style>
 </head>
 
@@ -685,6 +718,10 @@
       <div>
         <h1>BP Monitor</h1>
         <span>Real-time blood pressure estimation</span>
+      </div>
+      <div class="profile-switcher" style="margin-left:16px">
+        <button class="profile-btn active" id="prof-guest" onclick="switchProfile(null)">Guest</button>
+        <button class="profile-btn" id="prof-anuk" onclick="switchProfile('anuk')">Anuk</button>
       </div>
     </div>
 
@@ -882,6 +919,21 @@
     let MAX_BUFFER = FS * 120;  // keep 2 min of samples
     let sampleCounter = 0;
     let fsStartTime = 0;
+
+    // ── Profile system ──
+    let activeProfile = null; // null = guest, 'anuk' = Anuk's persistent profile
+
+    function profileQuery() {
+      return activeProfile ? '?profile=' + encodeURIComponent(activeProfile) : '';
+    }
+
+    function switchProfile(name) {
+      activeProfile = name;
+      document.getElementById('prof-guest').className = 'profile-btn' + (name ? '' : ' active');
+      document.getElementById('prof-anuk').className = 'profile-btn' + (name === 'anuk' ? ' active' : '');
+      checkStatus();
+      toast(name ? `Switched to ${name}'s profile` : 'Switched to Guest mode', 'success');
+    }
 
     const state = {
       ble: null,
@@ -1298,7 +1350,7 @@
       document.getElementById('predict-status').textContent = 'Sending to server…';
 
       try {
-        const res = await fetch(SERVER + '/api/predict', {
+        const res = await fetch(SERVER + '/api/predict' + profileQuery(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1489,7 +1541,7 @@
       document.getElementById('cal-result-text').textContent = 'Sending calibration sessions to server…';
 
       try {
-        const res = await fetch(SERVER + '/api/calibrate', {
+        const res = await fetch(SERVER + '/api/calibrate' + profileQuery(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1523,7 +1575,7 @@
     ══════════════════════════════════════════════════════════════════════════════ */
     async function checkStatus() {
       try {
-        const res = await fetch(SERVER + '/api/status');
+        const res = await fetch(SERVER + '/api/status' + profileQuery());
         const data = await res.json();
 
         setPill('pill-server', 'ok');
@@ -1555,7 +1607,7 @@
       btn.innerHTML = '<span class="spinner"></span> Waking…';
       toast('Pinging server — this may take up to 60s on cold start…', 'success');
       try {
-        const res = await fetch(SERVER + '/api/status');
+        const res = await fetch(SERVER + '/api/status' + profileQuery());
         if (res.ok) {
           toast('Server is awake!', 'success');
           checkStatus();
@@ -1590,7 +1642,7 @@
        INIT
     ══════════════════════════════════════════════════════════════════════════════ */
     (async function init() {
-      // Force clear backend calibration on hard refresh so the app state matches
+      // Force clear guest calibration on hard refresh (profiles are preserved)
       try {
         await fetch(SERVER + '/api/clear_calibration', { method: 'POST' });
       } catch (e) {
