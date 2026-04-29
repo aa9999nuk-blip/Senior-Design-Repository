@@ -133,6 +133,19 @@ def api_calibrate():
         return jsonify({"error": traceback.format_exc()}), 500
 
 
+@app.route("/api/clear_calibration", methods=["POST"])
+def api_clear_calibration():
+    global CAL_OBJ
+    CAL_OBJ = None
+    try:
+        cal_path = os.path.join(os.path.dirname(__file__), "calibration", "calibration.joblib")
+        if os.path.exists(cal_path):
+            os.remove(cal_path)
+    except Exception as e:
+        print(f"[server] Note: Could not clear calibration file: {e}")
+    return jsonify({"success": True})
+
+
 @app.route("/api/save_csv", methods=["POST"])
 def api_save_csv():
     body     = request.get_json(force=True)
