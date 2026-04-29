@@ -59,9 +59,9 @@ def _boot():
     except Exception as e:
         print(f"[server] Note: Could not clear calibration file: {e}")
 
-    CAL_OBJ = load_calibration()
-    if CAL_OBJ:
-        print(f"[server] Calibration loaded: {CAL_OBJ}")
+    cal_obj = load_calibration()
+    if cal_obj:
+        print(f"[server] Calibration loaded: {cal_obj}")
     else:
         print("[server] No calibration file found — using absolute model only.")
 
@@ -77,13 +77,14 @@ def index():
 
 @app.route("/api/status")
 def status():
+    cal_obj = load_calibration()
     return jsonify({
         "models_loaded":      MODELS is not None,
-        "calibration_loaded": CAL_OBJ is not None,
+        "calibration_loaded": cal_obj is not None,
         "model_error":        MODEL_ERROR,
-        "cal_sessions":       CAL_OBJ.get("n_sessions") if CAL_OBJ else 0,
-        "bias_sbp":           CAL_OBJ.get("bias_sbp")   if CAL_OBJ else None,
-        "bias_dbp":           CAL_OBJ.get("bias_dbp")   if CAL_OBJ else None,
+        "cal_sessions":       cal_obj.get("n_sessions") if cal_obj else 0,
+        "bias_sbp":           cal_obj.get("bias_sbp")   if cal_obj else None,
+        "bias_dbp":           cal_obj.get("bias_dbp")   if cal_obj else None,
     })
 
 
@@ -101,7 +102,8 @@ def api_predict():
         return jsonify({"error": "Need at least 2 IR and Red samples"}), 400
 
     try:
-        result = predict(ir, red, MODELS, cal_obj=CAL_OBJ, fs=fs)
+        cal_obj = load_calibration()
+        result = predict(ir, red, MODELS, cal_obj=cal_obj, fs=fs)
         return jsonify(result)
     except Exception:
         return jsonify({"error": traceback.format_exc()}), 500
@@ -109,7 +111,6 @@ def api_predict():
 
 @app.route("/api/calibrate", methods=["POST"])
 def api_calibrate():
-    global CAL_OBJ
     if MODELS is None:
         return jsonify({"error": f"Models not loaded: {MODEL_ERROR}"}), 503
 
@@ -122,7 +123,6 @@ def api_calibrate():
     try:
         fs = float(body.get("fs", 20))
         cal = run_calibration(sessions, MODELS, fs=fs)
-        CAL_OBJ = cal
         return jsonify({
             "success":    True,
             "bias_sbp":   cal["bias_sbp"],
@@ -135,8 +135,6 @@ def api_calibrate():
 
 @app.route("/api/clear_calibration", methods=["POST"])
 def api_clear_calibration():
-    global CAL_OBJ
-    CAL_OBJ = None
     try:
         cal_path = os.path.join(os.path.dirname(__file__), "calibration", "calibration.joblib")
         if os.path.exists(cal_path):
