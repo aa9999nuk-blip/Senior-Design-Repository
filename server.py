@@ -8,6 +8,10 @@ Endpoints:
   POST /api/predict   → {ir: [...], red: [...], fs: 20} → predictions
   POST /api/calibrate → {sessions: [{csv_data, sbp, dbp}, ...]} → cal_obj
   POST /api/save_csv  → {csv_data: "...", label: "..."} → saved path
+  POST /api/clear_calibration → clear guest calibration
+
+All endpoints accept an optional `profile` query parameter (e.g. ?profile=anuk).
+Profile calibrations are stored separately and are never cleared on refresh.
 """
 
 import os
@@ -16,6 +20,7 @@ import json
 import time
 import traceback
 import numpy as np
+import joblib
 
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
@@ -33,16 +38,38 @@ app = Flask(__name__, static_folder=".", static_url_path="")
 CORS(app)
 
 RECORDINGS_DIR = os.path.join(os.path.dirname(__file__), "recordings")
+CALIBRATION_DIR = os.path.join(os.path.dirname(__file__), "calibration")
 os.makedirs(RECORDINGS_DIR, exist_ok=True)
+os.makedirs(CALIBRATION_DIR, exist_ok=True)
 
 # ── Globals loaded at startup ─────────────────────────────────────────────────
 MODELS: dict | None = None
-CAL_OBJ: dict | None = None
 MODEL_ERROR: str | None = None
 
 
+def _cal_path_for_profile(profile: str | None) -> str:
+    """Return the calibration file path for a given profile name.
+    Guest/default uses 'calibration.joblib', named profiles use '<name>.joblib'."""
+    if profile:
+        safe = "".join(c for c in profile if c.isalnum() or c in ("_", "-")).lower()
+        return os.path.join(CALIBRATION_DIR, f"{safe}.joblib")
+    return os.path.join(CALIBRATION_DIR, "calibration.joblib")
+
+
+def _load_cal(profile: str | None) -> dict | None:
+    path = _cal_path_for_profile(profile)
+    if os.path.exists(path):
+        return joblib.load(path)
+    return None
+
+
+def _save_cal(cal_obj: dict, profile: str | None):
+    path = _cal_path_for_profile(profile)
+    joblib.dump(cal_obj, path)
+
+
 def _boot():
-    global MODELS, CAL_OBJ, MODEL_ERROR
+    global MODELS, MODEL_ERROR
     try:
         MODELS = load_models(MODEL_DIR)
         print(f"[server] Models loaded from {MODEL_DIR}")
@@ -50,20 +77,14 @@ def _boot():
         MODEL_ERROR = str(exc)
         print(f"[server] WARNING: Could not load models — {exc}")
 
-    # ALWAYS clear old calibration file on startup so it starts fresh
+    # Clear guest calibration on startup (profiles are preserved)
     try:
-        cal_path = os.path.join(os.path.dirname(__file__), "calibration", "calibration.joblib")
-        if os.path.exists(cal_path):
-            os.remove(cal_path)
-            print("[server] Cleared old calibration file on startup.")
+        guest_path = _cal_path_for_profile(None)
+        if os.path.exists(guest_path):
+            os.remove(guest_path)
+            print("[server] Cleared guest calibration file on startup.")
     except Exception as e:
         print(f"[server] Note: Could not clear calibration file: {e}")
-
-    cal_obj = load_calibration()
-    if cal_obj:
-        print(f"[server] Calibration loaded: {cal_obj}")
-    else:
-        print("[server] No calibration file found — using absolute model only.")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -77,7 +98,8 @@ def index():
 
 @app.route("/api/status")
 def status():
-    cal_obj = load_calibration()
+    profile = request.args.get("profile")
+    cal_obj = _load_cal(profile)
     return jsonify({
         "models_loaded":      MODELS is not None,
         "calibration_loaded": cal_obj is not None,
@@ -85,6 +107,7 @@ def status():
         "cal_sessions":       cal_obj.get("n_sessions") if cal_obj else 0,
         "bias_sbp":           cal_obj.get("bias_sbp")   if cal_obj else None,
         "bias_dbp":           cal_obj.get("bias_dbp")   if cal_obj else None,
+        "profile":            profile or "guest",
     })
 
 
@@ -93,6 +116,7 @@ def api_predict():
     if MODELS is None:
         return jsonify({"error": f"Models not loaded: {MODEL_ERROR}"}), 503
 
+    profile = request.args.get("profile")
     body = request.get_json(force=True)
     ir  = np.array(body.get("ir",  []), dtype=float)
     red = np.array(body.get("red", []), dtype=float)
@@ -102,7 +126,7 @@ def api_predict():
         return jsonify({"error": "Need at least 2 IR and Red samples"}), 400
 
     try:
-        cal_obj = load_calibration()
+        cal_obj = _load_cal(profile)
         result = predict(ir, red, MODELS, cal_obj=cal_obj, fs=fs)
         return jsonify(result)
     except Exception:
@@ -114,6 +138,7 @@ def api_calibrate():
     if MODELS is None:
         return jsonify({"error": f"Models not loaded: {MODEL_ERROR}"}), 503
 
+    profile = request.args.get("profile")
     body = request.get_json(force=True)
     sessions = body.get("sessions", [])
 
@@ -123,6 +148,8 @@ def api_calibrate():
     try:
         fs = float(body.get("fs", 20))
         cal = run_calibration(sessions, MODELS, fs=fs)
+        # Save to the profile-specific path
+        _save_cal(cal, profile)
         return jsonify({
             "success":    True,
             "bias_sbp":   cal["bias_sbp"],
@@ -135,10 +162,11 @@ def api_calibrate():
 
 @app.route("/api/clear_calibration", methods=["POST"])
 def api_clear_calibration():
+    """Only clears guest calibration. Named profiles are never auto-cleared."""
     try:
-        cal_path = os.path.join(os.path.dirname(__file__), "calibration", "calibration.joblib")
-        if os.path.exists(cal_path):
-            os.remove(cal_path)
+        guest_path = _cal_path_for_profile(None)
+        if os.path.exists(guest_path):
+            os.remove(guest_path)
     except Exception as e:
         print(f"[server] Note: Could not clear calibration file: {e}")
     return jsonify({"success": True})
