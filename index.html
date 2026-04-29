@@ -1563,7 +1563,14 @@
     /* ═══════════════════════════════════════════════════════════════════════════
        INIT
     ══════════════════════════════════════════════════════════════════════════════ */
-    (function init() {
+    (async function init() {
+      // Force clear backend calibration on hard refresh so the app state matches
+      try {
+        await fetch(SERVER + '/api/clear_calibration', { method: 'POST' });
+      } catch (e) {
+        console.warn('Could not clear calibration on init', e);
+      }
+
       checkStatus();
       setInterval(checkStatus, 15000);
 
