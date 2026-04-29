@@ -701,6 +701,7 @@
       <div class="status-pill" id="pill-ble">
         <span class="dot"></span> BLE
       </div>
+      <button class="btn btn-sm btn-secondary" id="btn-wake" onclick="wakeServer()" style="margin-left:8px;padding:4px 10px;font-size:11px;">☀ Wake Server</button>
     </div>
   </header>
 
@@ -1537,10 +1538,35 @@
           document.getElementById('bp-cal-badge').textContent = 'no calibration';
           document.getElementById('cal-status-badge').textContent = 'Not calibrated';
         }
+
+        // Server responded — hide Wake button
+        document.getElementById('btn-wake').style.display = 'none';
       } catch {
         setPill('pill-server', 'err');
         setPill('pill-models', '');
+        // Server is down — show Wake button
+        document.getElementById('btn-wake').style.display = 'inline-flex';
       }
+    }
+
+    async function wakeServer() {
+      const btn = document.getElementById('btn-wake');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Waking…';
+      toast('Pinging server — this may take up to 60s on cold start…', 'success');
+      try {
+        const res = await fetch(SERVER + '/api/status');
+        if (res.ok) {
+          toast('Server is awake!', 'success');
+          checkStatus();
+        } else {
+          toast('Server responded with an error', 'error');
+        }
+      } catch {
+        toast('Server did not respond. It may still be waking up — try again in 30s.', 'error');
+      }
+      btn.disabled = false;
+      btn.innerHTML = '☀ Wake Server';
     }
 
     /* ═══════════════════════════════════════════════════════════════════════════
