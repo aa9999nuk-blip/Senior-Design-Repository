@@ -682,7 +682,6 @@
   <!-- ═══ HEADER ═══════════════════════════════════════════════════════════════ -->
   <header>
     <div class="logo">
-      <div class="logo-icon">🩺</div>
       <div>
         <h1>BP Monitor</h1>
         <span>Real-time blood pressure estimation</span>
@@ -746,7 +745,7 @@
       <!-- Predict controls -->
       <div class="predict-row mt12">
         <button class="btn btn-primary" id="btn-predict" disabled>
-          <span>🔮</span> Predict Now
+          Predict Now
         </button>
         <button class="btn btn-secondary" id="btn-clear-buffer">
           Clear buffer
@@ -767,13 +766,13 @@
 
       <div class="row">
         <button class="btn btn-primary" id="btn-connect" onclick="connectBLE()">
-          <span>📡</span> Connect
+          Connect
         </button>
         <button class="btn btn-danger" id="btn-disconnect" onclick="disconnectBLE()" disabled>
           Disconnect
         </button>
         <button class="btn btn-secondary" id="btn-start-reading" onclick="triggerPredictionReading()" disabled>
-          <span>⏱️</span> Start 30s Reading
+          Start 30s Reading
         </button>
       </div>
 
@@ -839,7 +838,7 @@
     <!-- ── Calibration panel ──────────────────────────────────────────────── -->
     <div class="card full">
       <div class="collapsible-header" id="cal-toggle" onclick="toggleCal()">
-        <span class="card-title" style="font-size:14px">⚙️ Calibration</span>
+        <span class="card-title" style="font-size:14px">Calibration</span>
         <div class="row">
           <span class="badge badge-green" id="cal-status-badge">—</span>
           <span class="chevron">▾</span>
@@ -859,7 +858,7 @@
             <button class="btn btn-secondary btn-sm" onclick="addSession()">+ Add Session</button>
             <div class="spacer"></div>
             <button class="btn btn-primary" id="btn-run-cal" onclick="runCalibration()" disabled>
-              <span>🎯</span> Run Calibration
+              Run Calibration
             </button>
           </div>
 
@@ -912,11 +911,13 @@
       try {
         setPill('pill-ble', 'loading');
         
-        // We use acceptAllDevices so that devices that don't explicitly advertise
-        // the custom BLE_SERVICE in their broadcasting packets still show up.
-        // We use string UUIDs to avoid polyfill crashes.
+        // We use filters to specifically look for our device's name or custom service,
+        // so that the user doesn't have to scroll through all nearby Bluetooth devices.
         const device = await navigator.bluetooth.requestDevice({
-          acceptAllDevices: true,
+          filters: [
+            { name: 'QT_Py_ESP32S3' },
+            { services: [BLE_SERVICE] }
+          ],
           optionalServices: [
             BLE_SERVICE,
             '00001810-0000-1000-8000-00805f9b34fb',
@@ -1325,7 +1326,7 @@
         document.getElementById('predict-status').textContent = 'Error: ' + e.message;
         toast('Prediction failed: ' + e.message, 'error');
       } finally {
-        btn.innerHTML = '<span>🔮</span> Predict Now';
+        btn.innerHTML = 'Predict Now';
         btn.disabled = state.irBuffer.length < FS * 30;
       }
     }
@@ -1504,7 +1505,7 @@
 
         const biasInfo = `Bias: SBP ${data.bias_sbp > 0 ? '+' : ''}${data.bias_sbp.toFixed(1)}, DBP ${data.bias_dbp > 0 ? '+' : ''}${data.bias_dbp.toFixed(1)} mmHg`;
         document.getElementById('cal-result-text').textContent =
-          `✅ Calibration saved — ${data.n_sessions} session(s). ${biasInfo}`;
+          `Calibration saved — ${data.n_sessions} session(s). ${biasInfo}`;
         setPill('pill-cal', 'ok');
         document.getElementById('cal-status-badge').textContent = `${data.n_sessions} sessions`;
         toast('Calibration complete!', 'success');
@@ -1512,11 +1513,11 @@
         // Reload status
         checkStatus();
       } catch (e) {
-        document.getElementById('cal-result-text').textContent = '❌ Error: ' + e.message;
+        document.getElementById('cal-result-text').textContent = 'Error: ' + e.message;
         toast('Calibration failed: ' + e.message, 'error');
       } finally {
         btn.disabled = false;
-        btn.innerHTML = '<span>🎯</span> Run Calibration';
+        btn.innerHTML = 'Run Calibration';
       }
     }
 
