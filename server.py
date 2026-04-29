@@ -49,6 +49,16 @@ def _boot():
     except Exception as exc:
         MODEL_ERROR = str(exc)
         print(f"[server] WARNING: Could not load models — {exc}")
+
+    # ALWAYS clear old calibration file on startup so it starts fresh
+    try:
+        from ppg_bp_pipeline_v3 import CALIBRATION_PATH
+        if os.path.exists(CALIBRATION_PATH):
+            os.remove(CALIBRATION_PATH)
+            print("[server] Cleared old calibration file on startup.")
+    except Exception as e:
+        print(f"[server] Note: Could not clear calibration file: {e}")
+
     CAL_OBJ = load_calibration()
     if CAL_OBJ:
         print(f"[server] Calibration loaded: {CAL_OBJ}")
