@@ -56,17 +56,7 @@
       overflow-x: hidden;
     }
 
-    /* animated mesh background */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      z-index: -1;
-      background:
-        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(99, 102, 241, 0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 50% at 80% 80%, rgba(139, 92, 246, 0.10) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 40% at 50% 50%, rgba(56, 189, 248, 0.05) 0%, transparent 60%);
-    }
+    /* animated mesh background — removed for simplicity */
 
     /* ─── Layout ─────────────────────────────────────────── */
     header {
@@ -141,7 +131,6 @@
 
     .status-pill.ok .dot {
       background: var(--green);
-      box-shadow: 0 0 6px var(--green);
     }
 
     .status-pill.warn .dot {
@@ -177,7 +166,7 @@
     }
 
     .card:hover {
-      box-shadow: 0 0 0 1px var(--border-glow), var(--shadow);
+      box-shadow: var(--shadow);
     }
 
     .card.full {
@@ -243,9 +232,7 @@
       font-weight: 700;
       line-height: 1;
       font-variant-numeric: tabular-nums;
-      background: linear-gradient(135deg, var(--text) 60%, var(--muted));
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: var(--text);
       transition: all .5s;
     }
 
@@ -276,21 +263,35 @@
     /* BP prediction card */
     .bp-card {
       grid-column: 1 / -1;
-      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(139, 92, 246, 0.06));
-      border-color: rgba(99, 102, 241, 0.25);
+      border-color: rgba(99, 102, 241, 0.2);
     }
 
     .bp-readings {
       display: flex;
-      gap: 32px;
+      gap: 24px;
       flex-wrap: wrap;
       align-items: flex-start;
       margin-bottom: 16px;
     }
 
+    @media (max-width: 500px) {
+      .bp-readings {
+        flex-direction: column;
+        gap: 16px;
+      }
+      .bp-readings .bp-slash { display: none; }
+      .bp-readings .bp-block-raw {
+        border-left: none !important;
+        padding-left: 0 !important;
+        border-top: 1px solid var(--border);
+        padding-top: 12px;
+      }
+      .bp-value { font-size: 48px !important; }
+    }
+
     .bp-block {
       flex: 1;
-      min-width: 120px;
+      min-width: 100px;
     }
 
     .bp-label {
@@ -303,7 +304,7 @@
     }
 
     .bp-value {
-      font-size: 64px;
+      font-size: 56px;
       font-weight: 800;
       line-height: 1;
       font-variant-numeric: tabular-nums;
@@ -311,15 +312,11 @@
     }
 
     .bp-value.sbp {
-      background: linear-gradient(135deg, #a78bfa, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: #a78bfa;
     }
 
     .bp-value.dbp {
-      background: linear-gradient(135deg, #38bdf8, #818cf8);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      color: #38bdf8;
     }
 
     .bp-ci {
@@ -393,14 +390,12 @@
     }
 
     .btn-primary {
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      background: var(--accent);
       color: #fff;
-      box-shadow: 0 2px 12px rgba(99, 102, 241, .4);
     }
 
     .btn-primary:hover:not(:disabled) {
       transform: translateY(-1px);
-      box-shadow: 0 4px 20px rgba(99, 102, 241, .5);
     }
 
     .btn-secondary {
@@ -758,13 +753,13 @@
           <div class="bp-value sbp" id="bp-sbp">—</div>
           <div class="bp-ci" id="bp-ci-sbp">CI: —</div>
         </div>
-        <div style="align-self:center;font-size:48px;color:var(--subtle);padding-top:8px">/</div>
+        <div class="bp-slash" style="align-self:center;font-size:48px;color:var(--subtle);padding-top:8px">/</div>
         <div class="bp-block">
           <div class="bp-label">Diastolic (DBP)</div>
           <div class="bp-value dbp" id="bp-dbp">—</div>
           <div class="bp-ci" id="bp-ci-dbp">CI: —</div>
         </div>
-        <div class="bp-block" style="border-left:1px solid var(--border);padding-left:24px">
+        <div class="bp-block bp-block-raw" style="border-left:1px solid var(--border);padding-left:24px">
           <div class="bp-label">Raw (uncalibrated)</div>
           <div style="font-size:28px;font-weight:700;color:var(--muted);font-variant-numeric:tabular-nums" id="bp-raw">—
             / —</div>
