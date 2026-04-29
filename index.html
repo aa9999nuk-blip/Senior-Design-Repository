@@ -674,6 +674,39 @@
     .mt16 {
       margin-top: 16px;
     }
+
+    /* ─── Profile switcher ────────────────────────────────── */
+    .profile-switcher {
+      display: flex;
+      gap: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 3px;
+    }
+
+    .profile-btn {
+      padding: 5px 14px;
+      font-size: 12px;
+      font-family: 'Inter', sans-serif;
+      font-weight: 500;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .2s;
+    }
+
+    .profile-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .profile-btn:hover:not(.active) {
+      color: var(--text);
+      background: var(--surface2);
+    }
   </style>
 </head>
 
@@ -685,6 +718,10 @@
       <div>
         <h1>BP Monitor</h1>
         <span>Real-time blood pressure estimation</span>
+      </div>
+      <div class="profile-switcher" style="margin-left:16px">
+        <button class="profile-btn active" id="prof-guest" onclick="switchProfile(null)">Guest</button>
+        <button class="profile-btn" id="prof-anuk" onclick="switchProfile('anuk')">Anuk</button>
       </div>
     </div>
 
@@ -701,6 +738,7 @@
       <div class="status-pill" id="pill-ble">
         <span class="dot"></span> BLE
       </div>
+      <button class="btn btn-sm btn-secondary" id="btn-wake" onclick="wakeServer()" style="margin-left:8px;padding:4px 10px;font-size:11px;">☀ Wake Server</button>
     </div>
   </header>
 
@@ -735,15 +773,10 @@
       </div>
 
       <!-- Waveform -->
-      <canvas id="waveform"
-        style="background:#1a1a2e;border-radius:10px;width:100%;height:140px;margin-top:16px"></canvas>
+      <canvas id="waveform" style="background:#1a1a2e;border-radius:10px;width:100%;height:140px;margin-top:16px"></canvas>
       <div style="display:flex;gap:16px;font-size:0.8rem;margin-top:8px;justify-content:center;color:var(--muted)">
-        <span style="display:flex;align-items:center;gap:6px;"><span
-            style="width:10px;height:10px;border-radius:50%;display:inline-block;background:#a78bfa"></span>IR
-          LED</span>
-        <span style="display:flex;align-items:center;gap:6px;"><span
-            style="width:10px;height:10px;border-radius:50%;display:inline-block;background:#f87171"></span>Red
-          LED</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:#a78bfa"></span>IR LED</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:10px;height:10px;border-radius:50%;display:inline-block;background:#f87171"></span>Red LED</span>
       </div>
       <div class="text-muted mt8" id="buffer-info">Buffer: 0 samples (0.0 s) — connect BLE to start streaming</div>
 
@@ -761,8 +794,7 @@
 
     <!-- ── BLE Connection card ────────────────────────────────────────────── -->
     <div class="card">
-      <div class="card-header"
-        style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
+      <div class="card-header" style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
         <span class="card-title">BLE Sensor</span>
         <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
           <span class="badge badge-sky" id="ble-device-name">Not connected</span>
@@ -888,6 +920,21 @@
     let sampleCounter = 0;
     let fsStartTime = 0;
 
+    // ── Profile system ──
+    let activeProfile = null; // null = guest, 'anuk' = Anuk's persistent profile
+
+    function profileQuery() {
+      return activeProfile ? '?profile=' + encodeURIComponent(activeProfile) : '';
+    }
+
+    function switchProfile(name) {
+      activeProfile = name;
+      document.getElementById('prof-guest').className = 'profile-btn' + (name ? '' : ' active');
+      document.getElementById('prof-anuk').className = 'profile-btn' + (name === 'anuk' ? ' active' : '');
+      checkStatus();
+      toast(name ? `Switched to ${name}'s profile` : 'Switched to Guest mode', 'success');
+    }
+
     const state = {
       ble: null,
       char: null,
@@ -916,7 +963,7 @@
     async function connectBLE() {
       try {
         setPill('pill-ble', 'loading');
-
+        
         // We use filters to specifically look for our device's name or custom service,
         // so that the user doesn't have to scroll through all nearby Bluetooth devices.
         const device = await navigator.bluetooth.requestDevice({
@@ -958,17 +1005,17 @@
         document.getElementById('btn-disconnect').disabled = false;
         if (state.cmdChar) document.getElementById('btn-start-reading').disabled = false;
         toast('BLE connected to ' + device.name, 'success');
-
+        
         startIdleTimer();
       } catch (e) {
         setPill('pill-ble', 'err');
-
+        
         // Handle weird polyfill errors like '2'
         let msg = e.message !== undefined ? e.message : (typeof e === 'string' ? e : JSON.stringify(e));
         if (msg === '2') {
           msg = "Bluetooth is unsupported/turned off, or the app lacks BT permissions (Error 2).";
         }
-
+        
         toast('BLE error: ' + msg, 'error');
         console.error('BLE connection error:', e);
       }
@@ -988,7 +1035,7 @@
 
     async function triggerPredictionReading() {
       if (state.recording) { toast('Currently recording calibration session', 'error'); return; }
-
+      
       const started = await startManualReading();
       if (!started) return;
 
@@ -1003,22 +1050,22 @@
 
     function startIdleTimer() {
       if (state.idleTimerInterval) clearInterval(state.idleTimerInterval);
-
+      
       const badge = document.getElementById('ble-idle-timer');
       badge.style.display = 'inline-block';
-
+      
       state.idleTimerInterval = setInterval(() => {
         if (!state.ble || !state.ble.gatt.connected) {
           badge.style.display = 'none';
           return;
         }
-
+        
         const now = Date.now();
         const timeSinceLastData = now - state.lastDataTime;
-
+        
         if (state.lastDataTime > 0 && timeSinceLastData > 5000) {
           // We are in IDLE state (haven't received data for 5s)
-
+          
           if (state.isMeasuring) {
             state.isMeasuring = false;
             // The measurement JUST finished! Auto-predict if not calibrating.
@@ -1027,12 +1074,12 @@
               predict();
             }
           }
-
+          
           if (state.lastMeasureStart > 0) {
             const elapsed = now - state.lastMeasureStart;
             const intervalMs = 15 * 60 * 1000;
             const remainingMs = intervalMs - elapsed;
-
+            
             if (remainingMs > 0) {
               const rSec = Math.floor(remainingMs / 1000);
               const m = Math.floor(rSec / 60);
@@ -1072,12 +1119,12 @@
       document.getElementById('btn-start-reading').disabled = true;
       document.getElementById('ble-device-name').textContent = 'Not connected';
       state.cmdChar = null;
-
+      
       if (state.idleTimerInterval) clearInterval(state.idleTimerInterval);
       document.getElementById('ble-idle-timer').style.display = 'none';
       state.lastDataTime = 0;
       state.lastMeasureStart = 0;
-
+      
       toast('BLE disconnected', 'error');
     }
 
@@ -1089,7 +1136,7 @@
         state.isMeasuring = true;
         fsStartTime = performance.now();
         sampleCounter = 0;
-
+        
         // Auto-clear buffer on new session (unless recording a calibration)
         if (!state.recording) {
           state.irBuffer = [];
@@ -1183,7 +1230,7 @@
       canvas.height = 140;
       const H = canvas.height;
 
-      const CHART_LEN = 100; // Keep 5 seconds of data on screen
+      const CHART_LEN = 200; // Keep 10 seconds of data on screen
       const nSamples = Math.min(CHART_LEN, state.irBuffer.length);
       const irData = state.irBuffer.slice(-nSamples);
       const redData = state.redBuffer.slice(-nSamples);
@@ -1303,7 +1350,7 @@
       document.getElementById('predict-status').textContent = 'Sending to server…';
 
       try {
-        const res = await fetch(SERVER + '/api/predict', {
+        const res = await fetch(SERVER + '/api/predict' + profileQuery(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1494,7 +1541,7 @@
       document.getElementById('cal-result-text').textContent = 'Sending calibration sessions to server…';
 
       try {
-        const res = await fetch(SERVER + '/api/calibrate', {
+        const res = await fetch(SERVER + '/api/calibrate' + profileQuery(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1528,7 +1575,7 @@
     ══════════════════════════════════════════════════════════════════════════════ */
     async function checkStatus() {
       try {
-        const res = await fetch(SERVER + '/api/status');
+        const res = await fetch(SERVER + '/api/status' + profileQuery());
         const data = await res.json();
 
         setPill('pill-server', 'ok');
@@ -1543,10 +1590,35 @@
           document.getElementById('bp-cal-badge').textContent = 'no calibration';
           document.getElementById('cal-status-badge').textContent = 'Not calibrated';
         }
+
+        // Server responded — hide Wake button
+        document.getElementById('btn-wake').style.display = 'none';
       } catch {
         setPill('pill-server', 'err');
         setPill('pill-models', '');
+        // Server is down — show Wake button
+        document.getElementById('btn-wake').style.display = 'inline-flex';
       }
+    }
+
+    async function wakeServer() {
+      const btn = document.getElementById('btn-wake');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span> Waking…';
+      toast('Pinging server — this may take up to 60s on cold start…', 'success');
+      try {
+        const res = await fetch(SERVER + '/api/status' + profileQuery());
+        if (res.ok) {
+          toast('Server is awake!', 'success');
+          checkStatus();
+        } else {
+          toast('Server responded with an error', 'error');
+        }
+      } catch {
+        toast('Server did not respond. It may still be waking up — try again in 30s.', 'error');
+      }
+      btn.disabled = false;
+      btn.innerHTML = '☀ Wake Server';
     }
 
     /* ═══════════════════════════════════════════════════════════════════════════
@@ -1569,7 +1641,14 @@
     /* ═══════════════════════════════════════════════════════════════════════════
        INIT
     ══════════════════════════════════════════════════════════════════════════════ */
-    (function init() {
+    (async function init() {
+      // Force clear guest calibration on hard refresh (profiles are preserved)
+      try {
+        await fetch(SERVER + '/api/clear_calibration', { method: 'POST' });
+      } catch (e) {
+        console.warn('Could not clear calibration on init', e);
+      }
+
       checkStatus();
       setInterval(checkStatus, 15000);
 
