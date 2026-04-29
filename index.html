@@ -1081,6 +1081,8 @@
         // More than 5 seconds since last data means a new session started
         state.lastMeasureStart = now;
         state.isMeasuring = true;
+        fsStartTime = performance.now();
+        sampleCounter = 0;
         
         // Auto-clear buffer on new session (unless recording a calibration)
         if (!state.recording) {
@@ -1212,8 +1214,6 @@
         ctx.beginPath();
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.8;
-        ctx.shadowColor = color;
-        ctx.shadowBlur = 3;
 
         pts.forEach((v, i) => {
           const x = (i / (pts.length - 1)) * W;
@@ -1221,7 +1221,6 @@
           i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
         });
         ctx.stroke();
-        ctx.shadowBlur = 0;
       }
 
       const irScale = getScale(irData);
