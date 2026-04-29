@@ -72,6 +72,9 @@ void setup() {
   Serial.begin(115200);
   Serial.println("PPG BLE Logger");
 
+  // Reduce CPU frequency to 80MHz to save battery (default is 240MHz)
+  setCpuFrequencyMhz(80);
+
   // ─── BLE setup ───────────────────────────────────────────────────────────
   BLEDevice::init("QT_Py_ESP32S3");
   BLEDevice::setMTU(512);
@@ -105,7 +108,15 @@ void setup() {
   BLEDevice::startAdvertising();
   Serial.println("BLE advertising...");
 
-  // ─── Sensor setup ────────────────────────────────────────────────────────
+  // ─── Sensor setup is now DEFERRED until a device connects ───
+  // We do not initialize the bioHub here to save battery during advertising.
+}
+
+bool sensorInitialized = false;
+
+void initSensor() {
+  if (sensorInitialized) return;
+  Serial.println("Initializing Sensor...");
   Wire1.begin();
   Wire1.setClock(400000);
 
@@ -115,11 +126,13 @@ void setup() {
   bioHub.configSensor();
   bioHub.setSampleRate(100);
   bioHub.setPulseWidth(69);
+  sensorInitialized = true;
 }
 
 // ─── Read one sample and notify over BLE ──────────────────────────────────────
 void ReadAndSendBLEData()
 {
+  if (!sensorInitialized) return;
   bioData body = bioHub.readSensor();
 
   if (deviceConnected) {
@@ -157,6 +170,26 @@ void ReadAndSend30Sec()
 
 // ─── Main loop ────────────────────────────────────────────────────────────────
 void loop() {
+
+  // VERY ENERGY EFFICIENT MODE (Duty Cycling via Deep Sleep)
+  if (!deviceConnected) {
+    // We are disconnected. Wait up to 10 seconds for someone to connect.
+    if (millis() > 10000) {
+      Serial.println("No connection after 10s. Sleeping for 20s to save battery...");
+      // Shut down completely for 20 seconds
+      esp_sleep_enable_timer_wakeup(20000000ULL); // 20 million microseconds = 20s
+      esp_deep_sleep_start();
+    }
+    
+    // While waiting for a connection in this 10s window, just idle
+    deviceState = STATE_IDLE; 
+    delay(100); 
+    return;
+  }
+
+  // ─── Only runs when CONNECTED ───
+  // First, ensure the sensor is powered on and initialized!
+  initSensor();
 
   if (deviceState == STATE_IDLE) {
     unsigned long now     = millis();
