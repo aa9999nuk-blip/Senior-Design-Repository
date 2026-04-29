@@ -914,10 +914,7 @@
         // We use filters to specifically look for our device's name or custom service,
         // so that the user doesn't have to scroll through all nearby Bluetooth devices.
         const device = await navigator.bluetooth.requestDevice({
-          filters: [
-            { name: 'QT_Py_ESP32S3' },
-            { services: [BLE_SERVICE] }
-          ],
+          filters: [{ name: 'QT_Py_ESP32S3' }],
           optionalServices: [
             BLE_SERVICE,
             '00001810-0000-1000-8000-00805f9b34fb',
