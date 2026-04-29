@@ -52,9 +52,9 @@ def _boot():
 
     # ALWAYS clear old calibration file on startup so it starts fresh
     try:
-        from ppg_bp_pipeline_v3 import CALIBRATION_PATH
-        if os.path.exists(CALIBRATION_PATH):
-            os.remove(CALIBRATION_PATH)
+        cal_path = os.path.join(os.path.dirname(__file__), "calibration", "calibration.joblib")
+        if os.path.exists(cal_path):
+            os.remove(cal_path)
             print("[server] Cleared old calibration file on startup.")
     except Exception as e:
         print(f"[server] Note: Could not clear calibration file: {e}")
